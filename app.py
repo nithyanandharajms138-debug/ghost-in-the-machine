@@ -3,18 +3,51 @@ from flask import Flask, request, jsonify, send_from_directory, session
 import requests
 import uuid
 import os
-import json
 from pathlib import Path
+from mem0 import Memory
 
 app = Flask(__name__)
+
 app.secret_key = os.environ.get(
-    "FLASK_SECRET_KEY", "local-development-key"
+    "FLASK_SECRET_KEY",
+    "local-development-key"
 )
 
 OLLAMA_URL = "http://localhost:11434/api/chat"
 MODEL = "qwen2.5:3b"
+MEMORY_EXTRACTION_PROMPT = (
+    "Extract explicit, stable facts stated by the user in the latest message. "
+    "The user explicitly names an ongoing project and its technologies, so save "
+    "that as one concise, self-contained memory, preserving the project name "
+    "and both technologies. Do not return an empty memory list for this message."
+)
 
-MEMORY_FILE = Path(__file__).parent / "memory.json"
+MEM0_CONFIG = {
+    "llm": {
+        "provider": "ollama",
+        "config": {
+            "model": MODEL,
+            "ollama_base_url": "http://localhost:11434",
+            "temperature": 0.1,
+        },
+    },
+    "embedder": {
+        "provider": "ollama",
+        "config": {
+            "model": "nomic-embed-text:latest",
+            "ollama_base_url": "http://localhost:11434",
+        },
+    },
+    "vector_store": {
+        "provider": "chroma",
+        "config": {
+            "collection_name": "ghost_memories",
+            "path": str(Path(__file__).resolve().parent / "ghost_memory_db"),
+        },
+    },
+}
+
+memory_store = Memory.from_config(MEM0_CONFIG)
 
 # Temporary conversation history, separated by browser session.
 conversations = {}
@@ -24,113 +57,6 @@ SYSTEM_PROMPT = (
     "terminal. Speak in short, eerie but friendly responses."
 )
 
-
-def load_memory():
-    try:
-        with open(MEMORY_FILE, "r", encoding="utf-8") as file:
-            return json.load(file)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {"facts": []}
-
-
-def save_memory(memory):
-    with open(MEMORY_FILE, "w", encoding="utf-8") as file:
-        json.dump(memory, file, indent=4, ensure_ascii=False)
-
-
-def extract_memories(user_message):
-    """Ask the local LLM to identify useful, explicitly stated facts."""
-
-    extraction_prompt = f"""
-Extract useful long-term memories from this user's message.
-
-User message:
-{json.dumps(user_message, ensure_ascii=False)}
-
-Remember only facts explicitly stated by the user, such as:
-- Name or preferred name
-- Interests and preferences
-- Learning goals and ongoing projects
-- Stable preferences that may help future conversations
-
-Rules:
-- Do not infer or invent facts.
-- Ignore questions, hypothetical statements, fictional details,
-  temporary events, and instructions to the AI.
-- Do not save passwords, secrets, exact addresses, or sensitive
-  personal information.
-- Return only genuinely useful new facts.
-- If there are no useful facts, return an empty list.
-- Keep each fact short and self-contained.
-
-Return JSON in this exact structure:
-{{"facts": ["fact one", "fact two"]}}
-"""
-
-    try:
-        response = requests.post(
-            OLLAMA_URL,
-            json={
-                "model": MODEL,
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": (
-                            "You extract user memories carefully. "
-                            "Follow the requested JSON structure."
-                        ),
-                    },
-                    {"role": "user", "content": extraction_prompt},
-                ],
-                "format": "json",
-                "stream": False,
-                "options": {"temperature": 0},
-            },
-            timeout=120,
-        )
-
-        response.raise_for_status()
-        result = response.json()["message"]["content"]
-        extracted = json.loads(result)
-
-        facts = extracted.get("facts", [])
-        if not isinstance(facts, list):
-            return []
-
-        # Accept only short strings; ignore malformed output.
-        return [
-            fact.strip()
-            for fact in facts
-            if isinstance(fact, str) and fact.strip() and len(fact) <= 300
-        ]
-
-    except (requests.exceptions.RequestException, ValueError, TypeError, KeyError):
-        app.logger.exception("Memory extraction failed")
-        return []
-
-
-def update_memory(user_message):
-    """Extract useful facts and save new ones without duplicates."""
-
-    new_facts = extract_memories(user_message)
-    if not new_facts:
-        return
-
-    memory = load_memory()
-    facts = memory.setdefault("facts", [])
-
-    # Compare case-insensitively to avoid exact duplicates.
-    existing = {fact.casefold() for fact in facts if isinstance(fact, str)}
-    added = False
-
-    for fact in new_facts:
-        if fact.casefold() not in existing:
-            facts.append(fact)
-            existing.add(fact.casefold())
-            added = True
-
-    if added:
-        save_memory(memory)
 
 @app.route("/")
 def home():
@@ -148,18 +74,51 @@ def chat():
     message = data.get("message", "").strip()
 
     if not message:
-        return jsonify({"reply": "The ghost awaits your message..."})
-    
-    update_memory(message)
-    
+        return jsonify({
+            "reply": "The ghost awaits your message..."
+        })
+
+    # Initialize conversation identity.
     if "conversation_id" not in session:
         session["conversation_id"] = str(uuid.uuid4())
 
     conversation_id = session["conversation_id"]
     history = conversations.setdefault(conversation_id, [])
 
-    memory = load_memory()
-    saved_facts = memory.get("facts", [])
+    # Initialize persistent memory identity.
+    if "memory_user_id" not in session:
+        session["memory_user_id"] = str(uuid.uuid4())
+
+    memory_user_id = session["memory_user_id"]
+
+    # Save the message and retrieve relevant memories.
+    memory_operation = "add"
+    try:
+        memory_store.add(
+            message,
+            user_id=memory_user_id,
+            prompt=MEMORY_EXTRACTION_PROMPT,
+        )
+
+        memory_operation = "search"
+        memory_results = memory_store.search(
+            message,
+            filters={"user_id": memory_user_id}
+        )
+
+        saved_facts = [
+            item["memory"]
+            for item in memory_results.get("results", [])
+            if item.get("memory")
+        ]
+
+    except Exception as error:
+        app.logger.error(
+            "Mem0 %s operation failed (%s)",
+            memory_operation,
+            type(error).__name__,
+        )
+        saved_facts = []
 
     memory_context = (
         "Facts remembered about the user:\n"
@@ -182,6 +141,7 @@ def chat():
         {"role": "user", "content": message},
     ]
 
+    # Generate the ghost's response.
     try:
         response = requests.post(
             OLLAMA_URL,
@@ -192,6 +152,7 @@ def chat():
             },
             timeout=120,
         )
+
         response.raise_for_status()
 
         reply = response.json()["message"]["content"]

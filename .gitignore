@@ -1,6 +1,19 @@
 
+# Python
 .venv/
+.venv-mem0/
 __pycache__/
 *.py[cod]
+
+# Environment and secrets
 .env
+.env.*
+
+# Personal memory
 memory.json
+
+# Local vector databases
+*_db/
+
+# Test and temporary files
+.pytest_cache/
