@@ -14,6 +14,7 @@ memory.json
 
 # Local vector databases
 *_db/
+memory_jobs.sqlite3*
 
 # Test and temporary files
 .pytest_cache/

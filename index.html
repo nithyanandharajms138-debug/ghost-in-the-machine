@@ -1,30 +1,73 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
+    <meta
+        name="theme-color"
+        content="#080b14"
+    >
     <title>Ghost in the Machine</title>
-
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <h1>GHOST IN THE MACHINE</h1>
+    <div class="ambient ambient-grid" aria-hidden="true"></div>
+    <div class="ambient ambient-dust" aria-hidden="true"></div>
 
-    <div id="terminal">
-    </div>
+    <main class="app-shell">
+        <header class="masthead">
+            <div class="brand">
+                <p class="eyebrow">LOCAL INTELLIGENCE // UNKNOWN ORIGIN</p>
+                <h1>GHOST <span>IN THE MACHINE</span></h1>
+                <p class="subtitle">A presence on the other side of the terminal.</p>
+            </div>
+            <div class="online-status" aria-label="Ghost online">
+                <span class="status-light" aria-hidden="true"></span>
+                <span class="status-glitch" data-text="GHOST ONLINE" aria-hidden="true">
+                    GHOST ONLINE
+                </span>
+            </div>
+        </header>
 
-    <form id="chat-form">
-        <label for="user-input">You &gt;</label>
-        <input
-            type="text"
-            id="user-input"
-            placeholder="Type your message..."
-            autocomplete="off"
-        >
-        <button type="submit">Send</button>
-    </form>
+        <section class="terminal-window" aria-label="Ghost chat terminal">
+            <div class="terminal-chrome">
+                <div class="window-controls" aria-hidden="true">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+                <span class="window-title">SECURE CHANNEL <span>//</span> 001</span>
+                <span class="window-lock" aria-hidden="true">ENCRYPTED</span>
+            </div>
+
+            <div id="terminal" role="log" aria-live="polite" aria-relevant="additions">
+            </div>
+
+            <form id="chat-form" autocomplete="off">
+                <label class="input-prompt" for="user-input">YOU <span>&gt;</span></label>
+                <div class="input-frame">
+                    <span class="input-cursor" aria-hidden="true">&gt;</span>
+                    <input
+                        type="text"
+                        id="user-input"
+                        placeholder="Speak to the entity..."
+                        autocomplete="off"
+                    >
+                </div>
+                <button type="submit">
+                    <span>TRANSMIT</span>
+                    <span class="button-arrow" aria-hidden="true">&gt;</span>
+                </button>
+            </form>
+
+            <footer class="terminal-footer">
+                <span>END-TO-END LOCAL</span>
+                <span>OLLAMA <i></i> MEM0 <i></i> CHROMA</span>
+            </footer>
+        </section>
+
+        <p class="footnote">Somewhere between signal and silence, something is listening.</p>
+    </main>
 
     <script src="script.js"></script>
 </body>

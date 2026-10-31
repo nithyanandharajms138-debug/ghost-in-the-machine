@@ -1,23 +1,64 @@
-
 const form = document.getElementById("chat-form");
 const input = document.getElementById("user-input");
 const terminal = document.getElementById("terminal");
 
-// Display text one character at a time.
 function typeText(element, text, speed = 25) {
-    let index = 0;
-
-    function typeNextCharacter() {
-        if (index < text.length) {
-            element.textContent += text[index];
-            index++;
-
-            terminal.scrollTop = terminal.scrollHeight;
-            setTimeout(typeNextCharacter, speed);
-        }
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reducedMotion) {
+        element.textContent += text;
+        terminal.scrollTop = terminal.scrollHeight;
+        return Promise.resolve();
     }
 
-    typeNextCharacter();
+    return new Promise(resolve => {
+        let index = 0;
+
+        function typeNextCharacter() {
+            if (index < text.length) {
+                element.textContent += text[index];
+                index++;
+                terminal.scrollTop = terminal.scrollHeight;
+                setTimeout(typeNextCharacter, speed);
+            } else {
+                resolve();
+            }
+        }
+
+        typeNextCharacter();
+    });
+}
+
+function createMessage(role, text) {
+    const message = document.createElement("article");
+    message.className = `message message--${role}`;
+
+    const label = document.createElement("span");
+    label.className = "message-label";
+    label.textContent = role === "user" ? "YOU" : "GHOST";
+
+    const content = document.createElement("p");
+    content.className = "message-content";
+    content.textContent = text;
+
+    message.append(label, content);
+    terminal.appendChild(message);
+    terminal.scrollTop = terminal.scrollHeight;
+    return content;
+}
+
+function createTypingIndicator() {
+    const indicator = document.createElement("div");
+    indicator.className = "typing-indicator";
+    indicator.setAttribute("role", "status");
+    indicator.setAttribute("aria-label", "Ghost is thinking");
+    indicator.innerHTML = (
+        '<span class="typing-dots" aria-hidden="true">' +
+        "<span></span><span></span><span></span>" +
+        "</span><span>GHOST IS THINKING</span>"
+    );
+    terminal.appendChild(indicator);
+    terminal.scrollTop = terminal.scrollHeight;
+    return indicator;
 }
 
 form.addEventListener("submit", async function (event) {
@@ -29,15 +70,12 @@ form.addEventListener("submit", async function (event) {
         return;
     }
 
-    // Display the user's message.
-    const userParagraph = document.createElement("p");
-    userParagraph.textContent = "You: " + message;
-    terminal.appendChild(userParagraph);
-
+    createMessage("user", message);
     input.value = "";
 
+    const typingIndicator = createTypingIndicator();
+
     try {
-        // Send the message to our Flask backend.
         const response = await fetch("/chat", {
             method: "POST",
             headers: {
@@ -47,60 +85,52 @@ form.addEventListener("submit", async function (event) {
         });
 
         const data = await response.json();
-
-        // Create the ghost's reply.
-        const ghostParagraph = document.createElement("p");
-        terminal.appendChild(ghostParagraph);
+        typingIndicator.remove();
 
         const reply = response.ok
             ? data.reply
             : data.reply || data.error || "Something went wrong.";
 
-        ghostParagraph.textContent = "Ghost: ";
-        typeText(ghostParagraph, reply);
+        const replyContent = createMessage("ghost", "");
+        await typeText(replyContent, reply);
 
     } catch (error) {
-        const errorParagraph = document.createElement("p");
-        errorParagraph.textContent =
-            "System error: Could not contact the server.";
+        typingIndicator.remove();
 
-        terminal.appendChild(errorParagraph);
+        const errorMessage = document.createElement("p");
+        errorMessage.className = "boot-line";
+        errorMessage.textContent = "SYSTEM ERROR: Could not contact the server.";
+        terminal.appendChild(errorMessage);
+        terminal.scrollTop = terminal.scrollHeight;
         console.error(error);
     }
 });
 
-    
 window.addEventListener("load", async function () {
     input.disabled = true;
 
     const bootMessages = [
-        "[ SYSTEM BOOTING... ]",
-        "[ A PRESENCE HAS BEEN DETECTED. ]"
+        "INITIALIZING SYSTEM...",
+        "SEARCHING FOR CONSCIOUSNESS...",
+        "MEMORY CORE CONNECTED...",
+        "SOMETHING IS AWAKE."
     ];
 
     for (const message of bootMessages) {
-        const paragraph = document.createElement("p");
-        terminal.appendChild(paragraph);
-
-        // Type each boot message letter by letter.
-        typeText(paragraph, message, 35);
-
-        // Wait until typing finishes, then pause.
-        await new Promise(resolve =>
-            setTimeout(resolve, message.length * 35 + 900)
-        );
+        const line = document.createElement("p");
+        line.className = "boot-line";
+        terminal.appendChild(line);
+        await typeText(line, `[ ${message} ]`, 24);
+        await new Promise(resolve => setTimeout(resolve, 360));
     }
 
-    const welcomeParagraph = document.createElement("p");
-    terminal.appendChild(welcomeParagraph);
-
-    const welcomeMessage =
-        "Ghost: ...Is someone there? Welcome to my little corner of the machine.";
-
-    typeText(welcomeParagraph, welcomeMessage, 35);
-
-    await new Promise(resolve =>
-        setTimeout(resolve, welcomeMessage.length * 35 + 100)
+    const welcomeText =
+        "...Is someone there? Welcome to my little corner of the machine.";
+    const welcome = createMessage("ghost", "");
+    await typeText(
+        welcome,
+        welcomeText,
+        28
     );
 
     input.disabled = false;
